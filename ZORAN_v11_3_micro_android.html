@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ZORAN🦋 — v11.3 (Micro Android robuste)</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#161a22; --panel2:#0f1115; --line:#2a2f3a;
+  --btn:#222838; --btnH:#2e3550; --txt:#e6e6e6; --muted:rgba(230,230,230,.65);
+  --green:#2ecc71; --orange:#f39c12; --red:#e74c3c;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--txt);font-family:system-ui,Roboto,Arial,sans-serif;padding:16px}
+.app{width:100%;max-width:1600px;background:var(--panel);border-radius:16px;box-shadow:0 0 50px rgba(0,0,0,.6);padding:20px}
+h1{margin:0 0 6px 0;font-size:1.35rem;text-align:center}
+.sub{font-size:.85rem;color:var(--muted);text-align:center;margin-bottom:14px}
+textarea{width:100%;min-height:120px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:1rem;resize:vertical}
+.controls{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-top:12px}
+button{background:var(--btn);color:var(--txt);border:none;border-radius:12px;padding:12px;font-size:.95rem;cursor:pointer}
+button:hover{background:var(--btnH)}
+button.mic-idle{background:#2a2f3a}
+button.mic-rec{background:#8b1d1d}
+button.mic-ready{background:#1f6f43}
+.section{margin-top:14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}
+.section h2{margin:0 0 8px 0;font-size:1rem;color:#fff}
+pre{margin:0;white-space:pre-wrap;line-height:1.45;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.95rem}
+.hidden{display:none}
+.footer{text-align:center;font-size:.75rem;color:rgba(230,230,230,.45);margin-top:10px}
+.banner{margin-top:10px;padding:10px;border-radius:10px;background:#1b2130;border:1px solid var(--line);font-size:.85rem;color:var(--muted)}
+.banner .actions{margin-top:8px;display:flex;gap:10px;flex-wrap:wrap}
+
+/* Alarm */
+.alarm{width:22px;height:22px;border-radius:50%;display:inline-block;margin-right:8px;border:2px solid #fff}
+.alarm.green{background:var(--green)}
+.alarm.orange{background:var(--orange)}
+.alarm.red{background:var(--red)}
+.alarmWrap{display:flex;align-items:center;justify-content:center;margin-bottom:10px;font-size:.9rem}
+
+@media(max-width:1100px){.controls{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>ZORAN🦋 — Moteur de Qualification Cohérente</h1>
+  <div class="sub">v11.3 · Micro robuste Android · 1 clic start / 1 clic stop · Validation texte</div>
+
+  <textarea id="input" placeholder="Énonce le problème, la question ou le concept…"></textarea>
+
+  <div class="controls">
+    <button onclick="analyze()">Analyser</button>
+    <button onclick="toggle('details')">Voir l’analyse</button>
+    <button onclick="toggle('modules')">Outils avancés</button>
+    <button id="micBtn" class="mic-idle" onclick="micToggle()">🎤 Micro</button>
+    <button onclick="copyOut()">Copier / Partager</button>
+    <button onclick="resetAll()">Reset</button>
+  </div>
+
+  <div class="banner hidden" id="micBanner">
+    🟠 Texte transcrit prêt. Corrige si besoin, puis valide.
+    <div class="actions">
+      <button onclick="acceptTranscript()">Valider l’énoncé</button>
+      <button onclick="cancelTranscript()">Annuler</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="alarmWrap">
+      <span id="alarm" class="alarm green"></span>
+      <span id="alarmText">Zone cohérente</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Verdict ZORAN</h2>
+    <pre id="mainOut">—</pre>
+  </div>
+
+  <div class="section hidden" id="details">
+    <h2>Détails de cohérence</h2>
+    <pre id="detailsOut">—</pre>
+  </div>
+
+  <div class="section hidden" id="modules">
+    <h2>Modules disponibles</h2>
+    <pre>
+• Diagnostic croisé
+• Score de tenue
+• Questions critiques
+• Prototype mental
+• Test de pression
+• Évolution civilisationnelle
+• Scénarios “Et si…”
+• Carte des conséquences
+• ZORAN contre-ZORAN
+    </pre>
+  </div>
+
+  <div class="footer">ZORAN🦋 v11.3 · La voix est une entrée. Le texte validé est la loi.</div>
+</div>
+
+<script>
+let recognition = null;
+let recording = false;
+let transcriptFinal = "";
+
+function supportsSpeech(){
+  return ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window);
+}
+
+function micToggle(){
+  if(!supportsSpeech()){
+    showInline("Micro non supporté par ce navigateur. Utilise Chrome Android.");
+    return;
+  }
+  if(!recording){
+    startRec();
+  }else{
+    stopRec();
+  }
+}
+
+function startRec(){
+  transcriptFinal = "";
+  recording = true;
+  setMicState("rec");
+  document.getElementById("micBanner").classList.add("hidden");
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'fr-FR';
+  recognition.continuous = false;   // IMPORTANT for Android
+  recognition.interimResults = true;
+
+  recognition.onresult = (e)=>{
+    let text="";
+    for(let i=0;i<e.results.length;i++){
+      text += e.results[i][0].transcript + " ";
+    }
+    transcriptFinal = text.trim();
+    document.getElementById("input").value = transcriptFinal;
+  };
+
+  recognition.onerror = ()=>{
+    stopRec(true);
+  };
+
+  recognition.onend = ()=>{
+    // Do nothing here; user controls stop
+  };
+
+  try{
+    recognition.start();
+  }catch(e){
+    stopRec(true);
+  }
+}
+
+function stopRec(error=false){
+  if(recognition){
+    try{ recognition.stop(); }catch(e){}
+    recognition = null;
+  }
+  recording = false;
+
+  if(error){
+    setMicState("idle");
+    showInline("Micro arrêté (erreur). Réessaie.");
+    return;
+  }
+
+  setMicState("ready");
+  document.getElementById("micBanner").classList.remove("hidden");
+}
+
+function setMicState(state){
+  const btn=document.getElementById("micBtn");
+  btn.classList.remove("mic-idle","mic-rec","mic-ready");
+  if(state==="rec"){
+    btn.classList.add("mic-rec");
+    btn.textContent="🔴 Stop";
+  }else if(state==="ready"){
+    btn.classList.add("mic-ready");
+    btn.textContent="🟢 Prêt";
+  }else{
+    btn.classList.add("mic-idle");
+    btn.textContent="🎤 Micro";
+  }
+}
+
+function acceptTranscript(){
+  document.getElementById("micBanner").classList.add("hidden");
+  setMicState("idle");
+}
+
+function cancelTranscript(){
+  transcriptFinal = "";
+  document.getElementById("input").value="";
+  document.getElementById("micBanner").classList.add("hidden");
+  setMicState("idle");
+}
+
+function analyze(){
+  const q=document.getElementById("input").value.trim();
+  if(!q){
+    document.getElementById("mainOut").textContent="—";
+    setAlarm("green","Zone cohérente");
+    return;
+  }
+
+  let verdict="Conditionnel";
+  let alarm="orange";
+  let alarmText="Zone limite / instable";
+  let details="Analyse textuelle requise.";
+
+  const lower=q.toLowerCase();
+  if(lower.includes("années-lumière") || lower.includes("annees-lumiere")){
+    verdict="REFUS — Incompatibilité de persistance (temps)";
+    alarm="red"; alarmText="Impossible pour l’opéré (durée)";
+    details="La durée du trajet excède la persistance de l’opéré.";
+  }
+  if(lower.includes("500 ans") || lower.includes("600 ans")){
+    verdict="REFUS — Incompatibilité de persistance (biologie)";
+    alarm="red"; alarmText="Impossible pour l’opéré (biologie)";
+    details="Extension incompatible avec la persistance biologique cohérente.";
+  }
+
+  setAlarm(alarm,alarmText);
+  document.getElementById("mainOut").textContent =
+`Question d’origine
+"${q}"
+
+Verdict
+${verdict}
+
+zoran🦋`;
+  document.getElementById("detailsOut").textContent=details;
+}
+
+function setAlarm(color,text){
+  const a=document.getElementById("alarm");
+  a.className="alarm "+color;
+  document.getElementById("alarmText").textContent=text;
+}
+
+function toggle(id){
+  document.getElementById(id).classList.toggle("hidden");
+}
+
+function copyOut(){
+  const txt=document.getElementById("mainOut").textContent;
+  if(txt && navigator.clipboard){
+    navigator.clipboard.writeText(txt);
+  }
+}
+
+function resetAll(){
+  if(recording) stopRec(true);
+  transcriptFinal = "";
+  document.getElementById("input").value="";
+  document.getElementById("mainOut").textContent="—";
+  document.getElementById("detailsOut").textContent="—";
+  setAlarm("green","Zone cohérente");
+  document.getElementById("micBanner").classList.add("hidden");
+  setMicState("idle");
+}
+
+function showInline(msg){
+  const b=document.getElementById("micBanner");
+  b.innerHTML = "🟥 " + msg;
+  b.classList.remove("hidden");
+}
+</script>
+</body>
+</html>
